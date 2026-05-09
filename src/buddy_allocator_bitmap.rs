@@ -156,6 +156,12 @@ impl Tree {
     }
 }
 
+// Ping-pong mode rounds.
+//
+// Ping-pong (alloc/dealloc) mode: `demo_alloc_dealloc` runs `PING_PONG_ROUNDS`
+// iterations of allocating `blocks` blocks and immediately deallocating them.
+// This stresses short-lived allocation churn. Increase `PING_PONG_ROUNDS` to
+// run more rounds (longer test) or reduce it to shorten runtime.
 const PING_PONG_ROUNDS: usize = 8;
 /// Flat tree things.
 ///
@@ -222,6 +228,10 @@ pub fn demo_alloc_dealloc(print_addresses: bool, blocks: u32, order: u8) -> Dura
 }
 
 pub fn demo_batch_alloc_free(print_addresses: bool, blocks: u32, order: u8) -> Duration {
+    // Demo: batch allocation then batch free for bitmap allocator.
+    // - Allocates up to `BATCH_BLOCK_LIMIT` blocks and then frees them in
+    //   reverse order. Useful to exercise bulk allocation and the bitmap
+    //   parent's recomputation logic.
     let blocks = blocks.min(BATCH_BLOCK_LIMIT);
     let num_trees = ((blocks as f32) / (Tree::blocks_in_level(MAX_ORDER - order) as f32)).ceil() as usize;
 

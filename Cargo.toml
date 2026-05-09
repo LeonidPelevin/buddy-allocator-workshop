@@ -2,6 +2,9 @@
 name = "buddy_allocator_workshop"
 version = "0.1.0"
 authors = ["restioson <restiosondev@gmail.com>"]
+# `edition = "2015"` is set to silence Cargo's warning about an unspecified
+# edition. It does not change allocator behaviour; it's only here so `cargo`
+# stops printing the "package.edition is unspecified" reminder on build.
 edition = "2015"
 
 [dependencies]
@@ -24,6 +27,12 @@ criterion = "0.2"
 [[bench]]
 name = "rb_tree"
 harness = false
+
+# The benches above declare custom benchmarks for the crate's allocator
+# implementations. `harness = false` means Criterion (or `cargo bench`) will
+# run these as standalone binaries with their own `main`/entry; these are not
+# the Rust test harness style benches. They exercise the different allocator
+# backends (rb_tree, bitmap) using the demo harness in `src/main.rs`.
 
 [[bench]]
 name = "bitmap"

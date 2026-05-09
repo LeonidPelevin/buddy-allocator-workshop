@@ -340,6 +340,12 @@ pub enum BlockAllocateError {
     OrderTooLarge(u8),
 }
 
+// Ping-pong mode rounds.
+//
+// Ping-pong (alloc/dealloc) mode: `demo_*_alloc_dealloc` runs `PING_PONG_ROUNDS`
+// iterations of allocating `blocks` blocks and immediately deallocating them.
+// This stresses short-lived allocation churn. Increase `PING_PONG_ROUNDS` to
+// run more rounds (longer test) or reduce it to shorten runtime.
 const PING_PONG_ROUNDS: usize = 8;
 pub fn demo_vecs(print_addresses: bool, blocks: u32, block_size: u8) -> Duration {
     let allocator = BuddyAllocator::<Vec<*const Block>>::new();
@@ -420,6 +426,10 @@ fn demo_alloc_dealloc<L: FreeList>(
     blocks: u32,
     block_size: u8,
 ) -> Duration {
+    // Demo: ping-pong alloc/dealloc workload for tree-based allocator.
+    // - Allocates and immediately deallocates blocks repeatedly. Useful to
+    //   measure allocator behaviour under rapid churn and pointer-based free
+    //   lists.
     allocator.create_top_level(0);
 
     let begin = Instant::now();
@@ -450,6 +460,9 @@ fn demo_batch_alloc_free<L: FreeList>(
     blocks: u32,
     block_size: u8,
 ) -> Duration {
+    // Demo: batch allocation then batch free for tree-based allocator.
+    // - Allocates up to `BATCH_BLOCK_LIMIT` blocks and then frees them in
+    //   reverse order. Use this to compare bulk allocation throughput.
     let blocks = blocks.min(BATCH_BLOCK_LIMIT);
     let top_level_blocks = top_level_blocks(blocks, block_size);
 

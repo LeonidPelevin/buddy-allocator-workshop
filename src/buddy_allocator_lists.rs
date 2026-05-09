@@ -273,6 +273,12 @@ impl<L: BlockList> BuddyAllocator<L> {
     }
 }
 
+// Ping-pong mode rounds.
+//
+// Ping-pong (alloc/dealloc) mode: `demo_*_alloc_dealloc` runs `PING_PONG_ROUNDS`
+// iterations of allocating `blocks` blocks and immediately deallocating them.
+// This stresses short-lived allocation churn. Increase `PING_PONG_ROUNDS` to
+// run more rounds (longer test) or reduce it to shorten runtime.
 const PING_PONG_ROUNDS: usize = 8;
 #[derive(Debug, Copy, Clone)]
 pub enum BlockSplitError {
@@ -395,6 +401,10 @@ fn demo_alloc_dealloc<L: BlockList>(
     blocks: u32,
     block_size: u8,
 ) -> Duration {
+    // Demo: ping-pong alloc/dealloc workload.
+    // - Creates one top-level block and then performs `PING_PONG_ROUNDS` times
+    //   allocate `blocks` blocks and immediately deallocate each one.
+    // - Use this to measure allocator behaviour under rapid alloc/dealloc churn.
     allocator.create_top_level(0);
 
     let start = Instant::now();
@@ -421,6 +431,11 @@ fn demo_batch_alloc_free<L: BlockList>(
     blocks: u32,
     block_size: u8,
 ) -> Duration {
+    // Demo: batch allocation followed by batch free.
+    // - Allocates up to `BATCH_BLOCK_LIMIT` blocks, records all addresses, and
+    //   then frees them in reverse order. This is useful to exercise bulk
+    //   allocation patterns and compare throughput between implementations.
+    // - Size is capped with `BATCH_BLOCK_LIMIT` (see `src/lib.rs`).
     let blocks = blocks.min(BATCH_BLOCK_LIMIT);
     let top_level_blocks = top_level_blocks(blocks, block_size);
 
