@@ -1,8 +1,7 @@
 ///! A modified buddy bitmap allocator
 use std::cmp;
-use std::mem;
 use std::time::{Duration, Instant};
-use super::{BASE_ORDER, LEVEL_COUNT, MAX_ORDER, MAX_ORDER_SIZE};
+use super::{BASE_ORDER, LEVEL_COUNT, MAX_ORDER, MAX_ORDER_SIZE, BATCH_BLOCK_LIMIT};
 
 /// A block in the bitmap
 struct Block {
@@ -123,8 +122,47 @@ impl Tree {
 
         Some(addr as *const u8)
     }
+
+    fn dealloc_exact(&mut self, addr: *const u8, desired_order: u8) {
+        let mut node_index = 1usize;
+        let addr = addr as usize;
+
+        for level in 0..(MAX_ORDER - desired_order) {
+            let left_child_index = flat_tree::left_child(node_index);
+            let bit_index = (MAX_ORDER_SIZE - level - 1) as usize;
+
+            node_index = if (addr >> bit_index) & 1 == 0 {
+                left_child_index
+            } else {
+                left_child_index + 1
+            };
+        }
+
+        unsafe {
+            self.block_mut(node_index - 1).order_free = desired_order + 1;
+        }
+
+        while node_index > 1 {
+            node_index = flat_tree::parent(node_index);
+
+            let left_child_index = flat_tree::left_child(node_index);
+            let left = unsafe { self.block(left_child_index - 1) }.order_free;
+            let right = unsafe { self.block(left_child_index) }.order_free;
+
+            unsafe {
+                self.block_mut(node_index - 1).order_free = cmp::max(left, right);
+            }
+        }
+    }
 }
 
+// Ping-pong mode rounds.
+//
+// Ping-pong (alloc/dealloc) mode: `demo_alloc_dealloc` runs `PING_PONG_ROUNDS`
+// iterations of allocating `blocks` blocks and immediately deallocating them.
+// This stresses short-lived allocation churn. Increase `PING_PONG_ROUNDS` to
+// run more rounds (longer test) or reduce it to shorten runtime.
+const PING_PONG_ROUNDS: usize = 8;
 /// Flat tree things.
 ///
 /// # Note
@@ -164,6 +202,66 @@ pub fn demo(print_addresses: bool, blocks: u32, order: u8) -> Duration {
         if print_addresses {
             println!("Address: {:#x}", addr as usize);
         }
+    }
+
+    start.elapsed()
+}
+
+pub fn demo_alloc_dealloc(print_addresses: bool, blocks: u32, order: u8) -> Duration {
+    let mut trees = vec![Tree::new()];
+
+    let start = Instant::now();
+
+    for _ in 0..PING_PONG_ROUNDS {
+        for _ in 0..blocks {
+            let addr = trees[0].alloc_exact(order).unwrap();
+
+            if print_addresses {
+                println!("Address: {:#x}", addr as usize);
+            }
+
+            trees[0].dealloc_exact(addr, order);
+        }
+    }
+
+    start.elapsed()
+}
+
+pub fn demo_batch_alloc_free(print_addresses: bool, blocks: u32, order: u8) -> Duration {
+    // Demo: batch allocation then batch free for bitmap allocator.
+    // - Allocates up to `BATCH_BLOCK_LIMIT` blocks and then frees them in
+    //   reverse order. Useful to exercise bulk allocation and the bitmap
+    //   parent's recomputation logic.
+    let blocks = blocks.min(BATCH_BLOCK_LIMIT);
+    let num_trees = ((blocks as f32) / (Tree::blocks_in_level(MAX_ORDER - order) as f32)).ceil() as usize;
+
+    let mut trees = Vec::with_capacity(num_trees);
+    for _ in 0..num_trees {
+        trees.push(Tree::new());
+    }
+
+    let start = Instant::now();
+    let mut current_tree = 0;
+    let mut allocated = Vec::with_capacity(blocks as usize);
+
+    for _ in 0..blocks {
+        let addr = match trees[current_tree].alloc_exact(order) {
+            Some(addr) => addr,
+            None => {
+                current_tree += 1;
+                trees[current_tree].alloc_exact(order).unwrap()
+            }
+        };
+
+        if print_addresses {
+            println!("Address: {:#x}", addr as usize);
+        }
+
+        allocated.push((current_tree, addr));
+    }
+
+    for (tree_index, addr) in allocated.into_iter().rev() {
+        trees[tree_index].dealloc_exact(addr, order);
     }
 
     start.elapsed()

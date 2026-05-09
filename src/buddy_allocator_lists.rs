@@ -1,4 +1,4 @@
-use super::{top_level_blocks, PageSize, PhysicalAllocator, MAX_ORDER, BASE_ORDER, LEVEL_COUNT};
+use super::{top_level_blocks, PageSize, PhysicalAllocator, MAX_ORDER, BASE_ORDER, LEVEL_COUNT, BATCH_BLOCK_LIMIT};
 use array_init;
 #[cfg(feature = "flame_profile")]
 use flame;
@@ -273,6 +273,13 @@ impl<L: BlockList> BuddyAllocator<L> {
     }
 }
 
+// Ping-pong mode rounds.
+//
+// Ping-pong (alloc/dealloc) mode: `demo_*_alloc_dealloc` runs `PING_PONG_ROUNDS`
+// iterations of allocating `blocks` blocks and immediately deallocating them.
+// This stresses short-lived allocation churn. Increase `PING_PONG_ROUNDS` to
+// run more rounds (longer test) or reduce it to shorten runtime.
+const PING_PONG_ROUNDS: usize = 8;
 #[derive(Debug, Copy, Clone)]
 pub enum BlockSplitError {
     BlockSmallestPossible,
@@ -292,8 +299,30 @@ impl<L: BlockList> PhysicalAllocator for BuddyAllocator<L> {
         block.begin_address as *const u8
     }
 
-    fn dealloc(&mut self, _frame: *const u8) {
-        unimplemented!()
+    fn dealloc(&mut self, frame: *const u8) {
+        self.dealloc_exact(frame);
+    }
+}
+
+impl<L: BlockList> BuddyAllocator<L> {
+    fn dealloc_exact(&mut self, frame: *const u8) {
+        let addr = frame as usize;
+
+        for order in 0..LEVEL_COUNT {
+            for index in 0..self.lists[order as usize].len() {
+                if self.lists[order as usize]
+                    .get(index)
+                    .map(|block| block.begin_address == addr)
+                    .unwrap_or(false)
+                {
+                    let mut block_index = BlockIndex { order, index };
+                    self.modify(&mut block_index, BlockState::Free);
+                    return;
+                }
+            }
+        }
+
+        panic!("Attempted to deallocate unknown frame at address {:#x}", addr);
     }
 }
 
@@ -305,6 +334,38 @@ pub fn demo_linked_lists(print_addresses: bool, blocks: u32, block_size: u8) -> 
 pub fn demo_vecs(print_addresses: bool, blocks: u32, block_size: u8) -> Duration {
     let allocator = BuddyAllocator::<Vec<Block>>::new();
     demo(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_vecs_alloc_dealloc(print_addresses: bool, blocks: u32, block_size: u8) -> Duration {
+    let allocator = BuddyAllocator::<Vec<Block>>::new();
+    demo_alloc_dealloc(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_vecs_batch_alloc_free(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<Vec<Block>>::new();
+    demo_batch_alloc_free(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_linked_lists_alloc_dealloc(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<LinkedList<Block>>::new();
+    demo_alloc_dealloc(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_linked_lists_batch_alloc_free(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<LinkedList<Block>>::new();
+    demo_batch_alloc_free(allocator, print_addresses, blocks, block_size)
 }
 
 fn demo<L: BlockList>(
@@ -329,6 +390,76 @@ fn demo<L: BlockList>(
         if print_addresses {
             println!("Address: {:#x}", addr);
         }
+    }
+
+    start.elapsed()
+}
+
+fn demo_alloc_dealloc<L: BlockList>(
+    mut allocator: BuddyAllocator<L>,
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    // Demo: ping-pong alloc/dealloc workload.
+    // - Creates one top-level block and then performs `PING_PONG_ROUNDS` times
+    //   allocate `blocks` blocks and immediately deallocate each one.
+    // - Use this to measure allocator behaviour under rapid alloc/dealloc churn.
+    allocator.create_top_level(0);
+
+    let start = Instant::now();
+
+    for _ in 0..PING_PONG_ROUNDS {
+        for _ in 0..blocks {
+            let index = allocator.allocate_exact(block_size).unwrap();
+            let addr = allocator.get(&index).unwrap().begin_address;
+
+            if print_addresses {
+                println!("Address: {:#x}", addr);
+            }
+
+            allocator.dealloc_exact(addr as *const u8);
+        }
+    }
+
+    start.elapsed()
+}
+
+fn demo_batch_alloc_free<L: BlockList>(
+    mut allocator: BuddyAllocator<L>,
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    // Demo: batch allocation followed by batch free.
+    // - Allocates up to `BATCH_BLOCK_LIMIT` blocks, records all addresses, and
+    //   then frees them in reverse order. This is useful to exercise bulk
+    //   allocation patterns and compare throughput between implementations.
+    // - Size is capped with `BATCH_BLOCK_LIMIT` (see `src/lib.rs`).
+    let blocks = blocks.min(BATCH_BLOCK_LIMIT);
+    let top_level_blocks = top_level_blocks(blocks, block_size);
+
+    for block_number in 0..top_level_blocks {
+        allocator
+            .create_top_level(2usize.pow(u32::from(MAX_ORDER + BASE_ORDER)) * block_number as usize);
+    }
+
+    let start = Instant::now();
+    let mut allocated = Vec::with_capacity(blocks as usize);
+
+    for _ in 0..blocks {
+        let index = allocator.allocate_exact(block_size).unwrap();
+        let addr = allocator.get(&index).unwrap().begin_address;
+
+        if print_addresses {
+            println!("Address: {:#x}", addr);
+        }
+
+        allocated.push(addr as *const u8);
+    }
+
+    for addr in allocated.into_iter().rev() {
+        allocator.dealloc_exact(addr);
     }
 
     start.elapsed()
