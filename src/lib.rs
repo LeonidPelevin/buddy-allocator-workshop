@@ -1,14 +1,6 @@
-#![feature(const_fn)]
-#![feature(nll)]
-#![feature(slice_patterns)]
-#![feature(duration_extras)]
 #![feature(arbitrary_self_types)]
 #![feature(test)]
 #![feature(integer_atomics)]
-#![feature(box_syntax)]
-#![feature(custom_attribute)]
-#![feature(plugin)]
-#![cfg_attr(feature = "flame_profile", plugin(flamer))]
 
 extern crate array_init;
 extern crate test;

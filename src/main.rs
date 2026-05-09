@@ -1,6 +1,3 @@
-#![feature(custom_attribute)]
-#![feature(plugin)]
-#![feature(nll)]
 #![cfg_attr(feature = "flame_profile", plugin(flamer))]
 #![allow(unused_attributes)]
 

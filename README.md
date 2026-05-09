@@ -50,6 +50,21 @@ be accurate -- the throughput will slow down as more blocks are
 allocated. This should be accurate for ones that have a complexity
 of O(log n) or less though.
 
+
+### NEW RESULTS (Macbook Air M4)
+```
+Running vecs demo...
+Finished vecs demo in 14.562052666s
+Running linked_lists demo...
+Finished linked lists demo in 34.762509s
+Running rb_tree_vecs demo...
+Finished rb tree vecs demo in 0.072965625s
+Running rb_tree_linked_lists demo...
+Finished rb tree linked lists demo in 0.089526417s
+Running bitmap demo...
+Finished bitmap demo in 0.069104958s
+```
+
 ## Naive List Based Implementation
 
 This implementation keeps a list per order of block. It is generic over

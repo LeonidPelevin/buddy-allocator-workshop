@@ -33,8 +33,16 @@ impl Tree {
 
     pub fn new() -> Tree {
         const BLOCKS_IN_TREE: usize = Tree::blocks_in_tree(LEVEL_COUNT);
-        let mut flat_blocks: Box<[Block; BLOCKS_IN_TREE]> = box unsafe { mem::uninitialized() };
-
+        // let mut flat_blocks: Box<[Block; BLOCKS_IN_TREE]> = box unsafe { mem::uninitialized() };
+        // Replace lines 36-37 with this:
+        let mut flat_blocks_vec = Vec::with_capacity(BLOCKS_IN_TREE);
+        for _ in 0..BLOCKS_IN_TREE {
+            flat_blocks_vec.push(Block { order_free: 0 }); 
+        }
+        let mut flat_blocks: Box<[Block; BLOCKS_IN_TREE]> = unsafe {
+            let ptr = flat_blocks_vec.leak() as *mut [Block] as *mut [Block; BLOCKS_IN_TREE];
+            Box::from_raw(ptr)
+        };
         let mut start: usize = 0;
         for level in 0..LEVEL_COUNT {
             let order = MAX_ORDER - level;
