@@ -37,7 +37,7 @@ const_assert!(__min_order_less_or_eq_than_4kib; BASE_ORDER <= 12);
 /// The size as a power of two of the maximum order.
 pub const MAX_ORDER_SIZE: u8 = BASE_ORDER + MAX_ORDER;
 /// Shared batch workload cap so all implementations run the same amount of batch work.
-pub const BATCH_BLOCK_LIMIT: u32 = 2_000;
+pub const BATCH_BLOCK_LIMIT: u32 = 500;
 
 trait PhysicalAllocator {
     fn alloc(&mut self, size: PageSize) -> *const u8;
