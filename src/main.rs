@@ -1,13 +1,13 @@
 #![cfg_attr(feature = "flame_profile", plugin(flamer))]
 #![allow(unused_attributes)]
+#![allow(non_local_definitions)]
+#![allow(unused_imports)]
 
 extern crate buddy_allocator_workshop;
 
-#[macro_use]
 extern crate structopt;
 #[cfg(feature = "flame_profile")]
 extern crate flame;
-#[macro_use]
 extern crate failure;
 
 use buddy_allocator_workshop::*;
@@ -21,6 +21,16 @@ const DEFAULT_DEMOS: &[&str] = &[
     "rb_tree_vecs",
     "rb_tree_linked_lists",
     "bitmap",
+    "vecs_alloc_dealloc",
+    "linked_lists_alloc_dealloc",
+    "rb_tree_vecs_alloc_dealloc",
+    "rb_tree_linked_lists_alloc_dealloc",
+    "bitmap_alloc_dealloc",
+    "vecs_batch_alloc_free",
+    "linked_lists_batch_alloc_free",
+    "rb_tree_vecs_batch_alloc_free",
+    "rb_tree_linked_lists_batch_alloc_free",
+    "bitmap_batch_alloc_free",
 ];
 
 #[derive(StructOpt, Debug)]
@@ -31,7 +41,8 @@ struct Options {
     #[structopt(short = "p", long = "print-addresses")]
     print_addresses: bool,
     /// Which demos to run. Defaults to all demos. Accepted values: `vecs`, `linked_lists`,
-    /// `rb_tree_vecs`, `rb_tree_linked_lists`.
+    /// `rb_tree_vecs`, `rb_tree_linked_lists`, `bitmap`, and their `*_alloc_dealloc` and
+    /// `*_batch_alloc_free` counterparts.
     #[structopt(short = "d", long = "demos")]
     demos: Vec<String>,
     /// How many blocks to demo allocate. Defaults to 100 000
@@ -91,6 +102,16 @@ fn main() {
                     "rb_tree_vecs" => buddy_allocator_tree::demo_vecs,
                     "rb_tree_linked_lists" => buddy_allocator_tree::demo_linked_lists,
                     "bitmap" => buddy_allocator_bitmap::demo,
+                    "linked_lists_alloc_dealloc" => buddy_allocator_lists::demo_linked_lists_alloc_dealloc,
+                    "vecs_alloc_dealloc" => buddy_allocator_lists::demo_vecs_alloc_dealloc,
+                    "rb_tree_vecs_alloc_dealloc" => buddy_allocator_tree::demo_vecs_alloc_dealloc,
+                    "rb_tree_linked_lists_alloc_dealloc" => buddy_allocator_tree::demo_linked_lists_alloc_dealloc,
+                    "bitmap_alloc_dealloc" => buddy_allocator_bitmap::demo_alloc_dealloc,
+                    "linked_lists_batch_alloc_free" => buddy_allocator_lists::demo_linked_lists_batch_alloc_free,
+                    "vecs_batch_alloc_free" => buddy_allocator_lists::demo_vecs_batch_alloc_free,
+                    "rb_tree_vecs_batch_alloc_free" => buddy_allocator_tree::demo_vecs_batch_alloc_free,
+                    "rb_tree_linked_lists_batch_alloc_free" => buddy_allocator_tree::demo_linked_lists_batch_alloc_free,
+                    "bitmap_batch_alloc_free" => buddy_allocator_bitmap::demo_batch_alloc_free,
                     _ => Err(DemosError::UnknownDemo { name: name.to_string() }).raise(),
                 },
                 name

@@ -1,4 +1,4 @@
-use super::{top_level_blocks, MAX_ORDER, BASE_ORDER, LEVEL_COUNT, MAX_ORDER_SIZE};
+use super::{top_level_blocks, MAX_ORDER, BASE_ORDER, LEVEL_COUNT, BATCH_BLOCK_LIMIT};
 use array_init;
 use bit_field::BitField;
 #[cfg(feature = "flame_profile")]
@@ -318,6 +318,15 @@ impl<L: FreeList> BuddyAllocator<L> {
 
         Ok(block)
     }
+
+    fn dealloc_exact(&mut self, block: *const Block, order: u8) {
+        let cursor = unsafe { self.tree.cursor_mut_from_ptr(block) };
+        unsafe {
+            cursor.get().unwrap().set_used(false);
+        }
+
+        self.free[order as usize].push(block);
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -331,14 +340,51 @@ pub enum BlockAllocateError {
     OrderTooLarge(u8),
 }
 
+const PING_PONG_ROUNDS: usize = 8;
 pub fn demo_vecs(print_addresses: bool, blocks: u32, block_size: u8) -> Duration {
     let allocator = BuddyAllocator::<Vec<*const Block>>::new();
     demo(allocator, print_addresses, blocks, block_size)
 }
 
+pub fn demo_vecs_alloc_dealloc(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<Vec<*const Block>>::new();
+    demo_alloc_dealloc(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_vecs_batch_alloc_free(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<Vec<*const Block>>::new();
+    demo_batch_alloc_free(allocator, print_addresses, blocks, block_size)
+}
+
 pub fn demo_linked_lists(print_addresses: bool, blocks: u32, block_size: u8) -> Duration {
     let allocator = BuddyAllocator::<SinglyLinkedList<BlockPtrAdapter>>::new();
     demo(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_linked_lists_alloc_dealloc(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<SinglyLinkedList<BlockPtrAdapter>>::new();
+    demo_alloc_dealloc(allocator, print_addresses, blocks, block_size)
+}
+
+pub fn demo_linked_lists_batch_alloc_free(
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let allocator = BuddyAllocator::<SinglyLinkedList<BlockPtrAdapter>>::new();
+    demo_batch_alloc_free(allocator, print_addresses, blocks, block_size)
 }
 
 fn demo<L: FreeList>(
@@ -363,6 +409,72 @@ fn demo<L: FreeList>(
         if print_addresses {
             println!("Address: {:#x}", addr);
         }
+    }
+
+    begin.elapsed()
+}
+
+fn demo_alloc_dealloc<L: FreeList>(
+    mut allocator: BuddyAllocator<L>,
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    allocator.create_top_level(0);
+
+    let begin = Instant::now();
+
+    for _ in 0..PING_PONG_ROUNDS {
+        for _ in 0..blocks {
+            let (addr, block) = {
+                let cursor = allocator.allocate_exact(block_size).unwrap();
+                let block = cursor.get().unwrap() as *const _;
+                let addr = cursor.get().unwrap().address();
+                (addr, block)
+            };
+
+            if print_addresses {
+                println!("Address: {:#x}", addr);
+            }
+
+            allocator.dealloc_exact(block, block_size);
+        }
+    }
+
+    begin.elapsed()
+}
+
+fn demo_batch_alloc_free<L: FreeList>(
+    mut allocator: BuddyAllocator<L>,
+    print_addresses: bool,
+    blocks: u32,
+    block_size: u8,
+) -> Duration {
+    let blocks = blocks.min(BATCH_BLOCK_LIMIT);
+    let top_level_blocks = top_level_blocks(blocks, block_size);
+
+    for block_number in 0..top_level_blocks {
+        allocator
+            .create_top_level(2usize.pow(u32::from(MAX_ORDER + BASE_ORDER)) * block_number as usize);
+    }
+
+    let begin = Instant::now();
+    let mut allocated = Vec::with_capacity(blocks as usize);
+
+    for _ in 0..blocks {
+        let cursor = allocator.allocate_exact(block_size).unwrap();
+        let addr = cursor.get().unwrap().address();
+        let block = cursor.get().unwrap() as *const _;
+
+        if print_addresses {
+            println!("Address: {:#x}", addr);
+        }
+
+        allocated.push(block);
+    }
+
+    for block in allocated.into_iter().rev() {
+        allocator.dealloc_exact(block, block_size);
     }
 
     begin.elapsed()
